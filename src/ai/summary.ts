@@ -47,10 +47,12 @@ RULES:
 }
 
 export async function streamCodebaseSummary(
+  targetUrl: string,
   entryPoints: string[],
   graph: GraphNode[]
 ) {
   const context = JSON.stringify({
+    repositoryUrl: targetUrl,
     entryPoints,
     modules: graph.map(g => ({
       name: g.module,
@@ -62,6 +64,8 @@ export async function streamCodebaseSummary(
   return streamObject({
     model: openai('gpt-4o'),
     schema: z.object({
+      repoName: z.string().describe('The name of the repository based on the URL or root folder.'),
+      tagline: z.string().describe('A catchy 4-word technical tagline of what this codebase builds.'),
       overview: z.string().describe('A high-level architectural overview (2-3 sentences max).'),
       keyModules: z.array(z.object({
         name: z.string(),

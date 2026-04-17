@@ -7,6 +7,8 @@ import '@xyflow/react/dist/style.css';
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 const schema = z.object({
+  repoName: z.string().describe('The name of the repository based on the URL or root folder.'),
+  tagline: z.string().describe('A catchy 4-word technical tagline of what this codebase builds.'),
   overview: z.string().describe('A high-level architectural overview (2-3 sentences max).'),
   keyModules: z.array(z.object({
     name: z.string(),
@@ -121,6 +123,15 @@ export default function App() {
               {/* Scrollable Architecture Specs */}
               <div className="flex-1 overflow-y-auto px-8 pt-8 pb-32 space-y-10">
                 
+                <div className="mb-2">
+                  <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">
+                    {object.repoName || <span className="animate-pulse text-gray-300 bg-gray-100 rounded-md text-transparent">Analyzing repository...</span>}
+                  </h1>
+                  <p className="text-slate-500 font-medium pb-6 border-b border-gray-100">
+                    {object.tagline || <span className="animate-pulse text-gray-300 bg-gray-100 rounded-md text-transparent">Scanning dependencies...</span>}
+                  </p>
+                </div>
+
                 <section>
                   <h2 className="text-xl font-bold flex items-center gap-2 mb-4 text-slate-900"><Activity className="text-blue-500"/> System Overview</h2>
                   <p className="text-slate-700 leading-relaxed text-lg bg-slate-50 p-6 rounded-2xl border border-slate-100">

@@ -61,7 +61,7 @@ export function startServer(port = 3000) {
         latestFiles = astData.latestFiles;
       }
       
-      const result = await streamCodebaseSummary(astData.entryPoints, astData.graph);
+      const result = await streamCodebaseSummary(target, astData.entryPoints, astData.graph);
       result.pipeTextStreamToResponse(res);
       
       // Cleanup happens asynchronously after stream finishes - a minor gap for this MVP
