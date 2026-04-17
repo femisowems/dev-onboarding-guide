@@ -4,6 +4,13 @@ import { join } from 'path';
 import { readFileSync } from 'fs';
 import { generateFileTree, FileNode } from '../ingest/scanner';
 
+export interface CodeModule {
+  name: string;
+  files: string[];
+  imports: string[];
+  exports: string[];
+}
+
 export function parseCodebase(basePath: string) {
   const parser = new Parser();
   parser.setLanguage(TypeScript);
@@ -12,7 +19,7 @@ export function parseCodebase(basePath: string) {
   const flatten = (nodes: FileNode[]): string[] => nodes.flatMap(n => n.type === 'file' ? n.path : flatten(n.children || []));
   const files = flatten(tree).filter(f => f.match(/\.(ts|tsx|js|jsx)$/));
   
-  const modulesMap = new Map<string, { files: string[], imports: string[], exports: string[] }>();
+  const modulesMap = new Map<string, CodeModule>();
 
   // Extract top-level directory grouping
   const getModule = (path: string) => path.split('/')[0];

@@ -13,7 +13,10 @@ export function printDashboard(result: AIAnalysisResult) {
 
   let stepsText = '';
   result.onboardingSteps.forEach((step, i) => {
-    stepsText += `${pc.green(`${i + 1}.`)} ${step}\n`;
+    stepsText += `${pc.green(`${i + 1}.`)} ${pc.bold(step.title)}\n`;
+    stepsText += `${pc.gray(step.filePath)}\n`;
+    stepsText += `${step.focus}\n`;
+    stepsText += `${pc.gray(step.why)}\n\n`;
   });
   p.note(stepsText.trim(), '🚀 Where to Start');
 }

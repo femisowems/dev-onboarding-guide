@@ -11,60 +11,66 @@ import { generateCodebaseSummary } from './ai/summary';
 import { printDashboard } from './cli/printer';
 import { startServer } from './server';
 
-const program = new Command();
+const args = process.argv.slice(2);
 
-program
-  .name('onboard')
-  .description('Codebase Onboarding Bot')
-  .version('1.0.0');
+if (args.length === 0) {
+  startServer();
+} else {
+  const program = new Command();
 
-program
-  .command('analyze')
-  .description('Analyze a target codebase')
-  .argument('<target>', 'Path to local directory or GitHub URL')
-  .action(async (target) => {
-    console.clear();
-    p.intro(pc.bgCyan(pc.black(' 🧠 CODEBASE ONBOARDING BOT ')));
+  program
+    .name('onboard')
+    .description('Codebase Onboarding Bot')
+    .version('1.0.0');
 
-    const s = p.spinner();
-    let resolvedPath = target;
+  program
+    .command('analyze')
+    .description('Analyze a target codebase')
+    .argument('<target>', 'Path to local directory or GitHub URL')
+    .action(async (target) => {
+      console.clear();
+      p.intro(pc.bgCyan(pc.black(' 🧠 CODEBASE ONBOARDING BOT ')));
 
-    try {
-      s.start(`Ingesting repository: ${target}`);
-      resolvedPath = resolveCodebase(target);
-      s.stop(`Ingestion complete: ${pc.gray(resolvedPath)}`);
+      const s = p.spinner();
+      let resolvedPath = target;
 
-      s.start('Parsing AST and generating dependency graphs');
-      const { entryPoints, modules } = parseCodebase(resolvedPath);
-      const graph = buildDependencyGraph(modules);
-      s.stop(`AST parsed: ${pc.blue(modules.length.toString())} modules found`);
+      try {
+        s.start(`Ingesting repository: ${target}`);
+        resolvedPath = resolveCodebase(target);
+        s.stop(`Ingestion complete: ${pc.gray(resolvedPath)}`);
 
-      if (!process.env.OPENAI_API_KEY) {
-        p.cancel('OPENAI_API_KEY missing from .env file.');
-        return;
+        s.start('Parsing AST and generating dependency graphs');
+        const { entryPoints, modules } = parseCodebase(resolvedPath);
+        const graph = buildDependencyGraph(modules);
+        s.stop(`AST parsed: ${pc.blue(modules.length.toString())} modules found`);
+
+        if (!process.env.OPENAI_API_KEY) {
+          p.cancel('OPENAI_API_KEY missing from .env file.');
+          return;
+        }
+
+        s.start('AI analyzing architecture context');
+        const aiSummary = await generateCodebaseSummary(entryPoints, modules, graph);
+        s.stop('AI analysis complete');
+
+        printDashboard(aiSummary);
+
+        p.outro(pc.green('✅ Guide generated successfully. Happy coding!'));
+      } catch (error: any) {
+        s.stop('Analysis Failed');
+        p.log.error(error.message);
+      } finally {
+        if (resolvedPath !== target) cleanupCodebase(resolvedPath);
       }
+    });
 
-      s.start('AI analyzing architecture context');
-      const aiSummary = await generateCodebaseSummary(entryPoints, graph);
-      s.stop('AI analysis complete');
+  program
+    .command('serve')
+    .description('Start the Web UI API server')
+    .option('-p, --port <number>', 'Port to listen on', '3000')
+    .action((options) => {
+      startServer(parseInt(options.port));
+    });
 
-      printDashboard(aiSummary);
-
-      p.outro(pc.green('✅ Guide generated successfully. Happy coding!'));
-    } catch (error: any) {
-      s.stop('Analysis Failed');
-      p.log.error(error.message);
-    } finally {
-      if (resolvedPath !== target) cleanupCodebase(resolvedPath);
-    }
-  });
-
-program
-  .command('serve')
-  .description('Start the Web UI API server')
-  .option('-p, --port <number>', 'Port to listen on', '3000')
-  .action((options) => {
-    startServer(parseInt(options.port));
-  });
-
-program.parse();
+  program.parse();
+}

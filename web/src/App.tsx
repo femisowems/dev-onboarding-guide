@@ -1,10 +1,34 @@
 import { useState, useEffect } from 'react';
-import { Activity, Github, Terminal, ArrowRight, Package, MessageSquare } from 'lucide-react';
+import { Activity, Github, Terminal, ArrowRight, Package, MessageSquare, Search } from 'lucide-react';
 import { experimental_useObject as useObject, useChat } from '@ai-sdk/react';
 import { z } from 'zod';
 import { ReactFlow, Background, Controls } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+
+type OnboardingStep = {
+  title: string;
+  filePath: string;
+  why: string;
+  focus: string;
+};
+
+type SearchResult = {
+  path: string;
+  startLine: number;
+  endLine: number;
+  snippet: string;
+  score: number;
+};
+
+type AudienceRole = 'frontend' | 'backend' | 'platform' | 'product-qa';
+
+const roleLabel: Record<AudienceRole, string> = {
+  frontend: 'Frontend',
+  backend: 'Backend',
+  platform: 'Platform',
+  'product-qa': 'Product / QA'
+};
 
 const schema = z.object({
   repoName: z.string().describe('The name of the repository based on the URL or root folder.'),
@@ -14,25 +38,60 @@ const schema = z.object({
     name: z.string(),
     responsibility: z.string()
   })).describe('3-5 critical modules and their exact technical responsibility.'),
-  onboardingSteps: z.array(z.string()).describe('A strict, 3-4 step chronological path for a new engineer to read the code.')
+  onboardingSteps: z.array(z.object({
+    title: z.string(),
+    filePath: z.string(),
+    why: z.string(),
+    focus: z.string()
+  })).describe('A strict, 3-4 step chronological path for a new engineer to read the code. Each step must name one concrete file path from the context.')
 });
 
 export default function App() {
+  const configuredApiBase = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
   const [url, setUrl] = useState('');
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<AudienceRole>('backend');
+  const [apiBase, setApiBase] = useState(configuredApiBase || 'http://localhost:3000');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const { object, submit, isLoading: isAnalyzing } = useObject({
-    api: 'http://localhost:3000/api/analyze-stream',
+    api: `${apiBase}/api/analyze-stream`,
     schema
   });
 
   const { messages, input, handleInputChange, handleSubmit, isLoading: isChatting } = useChat({
-    api: 'http://localhost:3000/api/chat',
+    api: `${apiBase}/api/chat`,
+    body: { role }
   });
 
   const analyze = async () => {
     setOpen(false);
-    submit({ target: url });
+    setSearchResults([]);
+    submit({ target: url, role });
+  };
+
+  const runSearch = async () => {
+    if (!url || !searchQuery.trim()) return;
+
+    setIsSearching(true);
+    try {
+      const response = await fetch(`${apiBase}/api/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: url, query: searchQuery, role })
+      });
+
+      if (!response.ok) {
+        throw new Error('Search failed');
+      }
+
+      const data = await response.json();
+      setSearchResults(data.results || []);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   // Toggle the Command Palette with Cmd+K
@@ -47,6 +106,42 @@ export default function App() {
     document.addEventListener('keydown', down);
     return () => document.removeEventListener('keydown', down);
   }, []);
+
+  useEffect(() => {
+    if (configuredApiBase) {
+      setApiBase(configuredApiBase);
+      return;
+    }
+
+    let cancelled = false;
+    const candidatePorts = [3000, 3001, 3002, 3003, 3004, 3005];
+
+    const discoverApi = async () => {
+      for (const candidatePort of candidatePorts) {
+        const candidateBase = `http://localhost:${candidatePort}`;
+        try {
+          const response = await fetch(`${candidateBase}/api/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: '__healthcheck__' })
+          });
+
+          if (!cancelled && response.status < 500) {
+            setApiBase(candidateBase);
+            return;
+          }
+        } catch {
+          // Keep probing candidate ports until one responds.
+        }
+      }
+    };
+
+    discoverApi();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configuredApiBase]);
 
   const nodes = object?.keyModules?.map((mod, i) => ({
     id: mod?.name || i.toString(),
@@ -77,6 +172,16 @@ export default function App() {
                 onKeyDown={(e) => { if (e.key === 'Enter' && url) analyze(); }}
                 className="w-full py-5 text-lg outline-none bg-transparent"
               />
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as AudienceRole)}
+                className="mr-2 px-2 py-2 text-sm rounded-md border border-gray-200 bg-white text-gray-700"
+              >
+                <option value="frontend">Frontend</option>
+                <option value="backend">Backend</option>
+                <option value="platform">Platform</option>
+                <option value="product-qa">Product / QA</option>
+              </select>
               <button 
                 onClick={analyze}
                 disabled={!url || isAnalyzing}
@@ -87,6 +192,7 @@ export default function App() {
             </div>
             <div className="px-4 py-3 bg-gray-50 text-xs text-gray-500 font-medium">
               Press <kbd className="bg-white border rounded px-1 shadow-sm font-sans mx-1">Enter</kbd> to submit
+              <span className="ml-3 text-slate-400">API: {apiBase}</span>
             </div>
           </div>
         </div>
@@ -127,6 +233,7 @@ export default function App() {
                   <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">
                     {object.repoName || <span className="animate-pulse text-gray-300 bg-gray-100 rounded-md text-transparent">Analyzing repository...</span>}
                   </h1>
+                  <p className="text-xs uppercase tracking-wide text-blue-600 font-semibold mb-2">Perspective: {roleLabel[role]}</p>
                   <p className="text-slate-500 font-medium pb-6 border-b border-gray-100">
                     {object.tagline || <span className="animate-pulse text-gray-300 bg-gray-100 rounded-md text-transparent">Scanning dependencies...</span>}
                   </p>
@@ -142,12 +249,22 @@ export default function App() {
                 <section>
                   <h2 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-900"><ArrowRight className="text-green-500"/> Where to Start</h2>
                   <div className="space-y-4">
-                    {object.onboardingSteps?.map((step: string | undefined, i: number) => (
+                    {object.onboardingSteps?.map((step: OnboardingStep | undefined, i: number) => (
                       <div key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-xl transition-colors border border-transparent hover:border-slate-100">
                         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-700 font-bold flex items-center justify-center shadow-sm">
                           {i + 1}
                         </div>
-                        <p className="text-slate-700 pt-1 leading-relaxed">{step || '...'}</p>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-slate-900 font-semibold leading-relaxed">{step?.title || '...'}</p>
+                            <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                              {roleLabel[role]}
+                            </span>
+                          </div>
+                          <p className="text-green-700 text-sm font-medium">{step?.filePath || '...'}</p>
+                          <p className="text-slate-700 text-sm leading-relaxed">{step?.focus || '...'}</p>
+                          <p className="text-slate-400 text-sm leading-relaxed">{step?.why || '...'}</p>
+                        </div>
                       </div>
                     ))}
                     {isAnalyzing && (!object.onboardingSteps || object.onboardingSteps.length === 0) && <div className="animate-pulse text-gray-400 px-4">Chartering paths...</div>}
@@ -176,9 +293,46 @@ export default function App() {
                   <MessageSquare className="w-5 h-5 text-blue-600"/>
                   <span className="font-semibold text-slate-900">Codebase Chat</span>
                 </div>
+
+                <div className="border-b border-gray-200 bg-white px-6 py-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <Search className="w-4 h-4 text-blue-600" />
+                    Search the codebase
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Find where auth, routing, or database wiring lives"
+                      className="w-full pl-4 pr-4 py-2.5 bg-slate-100 border-0 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm shadow-inner transition-shadow"
+                    />
+                    <button
+                      type="button"
+                      onClick={runSearch}
+                      disabled={isSearching || !searchQuery.trim() || !object}
+                      className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+                    >
+                      {isSearching ? 'Searching' : 'Search'}
+                    </button>
+                  </div>
+                  {searchResults.length > 0 && (
+                    <div className="max-h-44 overflow-y-auto space-y-2">
+                      {searchResults.map((result) => (
+                        <div key={`${result.path}:${result.startLine}-${result.endLine}`} className="p-3 rounded-xl border border-slate-100 bg-slate-50">
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <div className="text-sm font-semibold text-slate-900">{result.path}</div>
+                            <div className="text-xs text-slate-500">L{result.startLine}-L{result.endLine}</div>
+                          </div>
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700 font-sans">{result.snippet}</pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                  {messages.length === 0 && <p className="text-gray-400 text-center mt-10 text-sm">Ask any specific technical question about this repository based on the parsed AST.</p>}
+                  {messages.length === 0 && <p className="text-gray-400 text-center mt-10 text-sm">Ask a scoped technical question, then use the search box above to jump straight to matching files and symbols.</p>}
                   {messages.map(m => (
                     <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[85%] rounded-2xl px-5 py-3 shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white border border-gray-100 text-slate-800 rounded-bl-sm'}`}>

@@ -39,7 +39,7 @@ Start the internal Express API server, then start the Vite React frontend.
 
 ```bash
 # Terminal 1: Start Backend API
-npm run dev -- serve
+npm run dev
 
 # Terminal 2: Start Frontend UI
 npm run web:dev
