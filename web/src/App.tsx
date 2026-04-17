@@ -5,7 +5,6 @@ import { z } from 'zod';
 import { ReactFlow, Background, Controls } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { Command } from "cmdk";
 
 const schema = z.object({
   overview: z.string().describe('A high-level architectural overview (2-3 sentences max).'),
@@ -18,7 +17,6 @@ const schema = z.object({
 
 export default function App() {
   const [url, setUrl] = useState('');
-  const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
 
   const { object, submit, isLoading: isAnalyzing } = useObject({
@@ -31,7 +29,6 @@ export default function App() {
   });
 
   const analyze = async () => {
-    setError('');
     setOpen(false);
     submit({ target: url });
   };
@@ -50,9 +47,9 @@ export default function App() {
   }, []);
 
   const nodes = object?.keyModules?.map((mod, i) => ({
-    id: mod.name || i.toString(),
+    id: mod?.name || i.toString(),
     position: { x: 50 + (i % 2) * 250, y: 50 + Math.floor(i / 2) * 150 },
-    data: { label: <div className="text-sm font-semibold">{mod.name || 'Loading...'}</div> },
+    data: { label: <div className="text-sm font-semibold">{mod?.name || 'Loading...'}</div> },
     style: { padding: '12px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fff', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }
   })) || [];
 
@@ -134,12 +131,12 @@ export default function App() {
                 <section>
                   <h2 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-900"><ArrowRight className="text-green-500"/> Where to Start</h2>
                   <div className="space-y-4">
-                    {object.onboardingSteps?.map((step: string, i: number) => (
+                    {object.onboardingSteps?.map((step: string | undefined, i: number) => (
                       <div key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-xl transition-colors border border-transparent hover:border-slate-100">
                         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-700 font-bold flex items-center justify-center shadow-sm">
                           {i + 1}
                         </div>
-                        <p className="text-slate-700 pt-1 leading-relaxed">{step}</p>
+                        <p className="text-slate-700 pt-1 leading-relaxed">{step || '...'}</p>
                       </div>
                     ))}
                     {isAnalyzing && (!object.onboardingSteps || object.onboardingSteps.length === 0) && <div className="animate-pulse text-gray-400 px-4">Chartering paths...</div>}
