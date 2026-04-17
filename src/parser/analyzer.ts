@@ -1,72 +1,68 @@
-import { Project, SourceFile } from 'ts-morph';
-import { existsSync, readFileSync } from 'fs';
-import { join, relative } from 'path';
-
-export interface CodeModule {
-  name: string;
-  files: string[];
-  imports: string[];
-}
+import Parser from 'tree-sitter';
+const TypeScript = require('tree-sitter-typescript').tsx;
+import { join } from 'path';
+import { readFileSync } from 'fs';
+import { generateFileTree, FileNode } from '../ingest/scanner';
 
 export function parseCodebase(basePath: string) {
-  const project = new Project({ compilerOptions: { allowJs: true } });
-
-  const searchPath = join(basePath, '**/*.{ts,tsx,js,jsx}').replace(/\\/g, '/');
-  const ignoreNodeModules = `!${join(basePath, 'node_modules/**/*').replace(/\\/g, '/')}`;
+  const parser = new Parser();
+  parser.setLanguage(TypeScript);
   
-  project.addSourceFilesAtPaths([searchPath, ignoreNodeModules]);
-  const files = project.getSourceFiles();
-
-  return {
-    entryPoints: detectEntryPoints(basePath, files),
-    modules: groupModules(basePath, files)
-  };
-}
-
-function detectEntryPoints(basePath: string, files: SourceFile[]): string[] {
-  const entries = new Set<string>();
-  const pkgPath = join(basePath, 'package.json');
+  const tree = generateFileTree(basePath);
+  const flatten = (nodes: FileNode[]): string[] => nodes.flatMap(n => n.type === 'file' ? n.path : flatten(n.children || []));
+  const files = flatten(tree).filter(f => f.match(/\.(ts|tsx|js|jsx)$/));
   
-  if (existsSync(pkgPath)) {
+  const modulesMap = new Map<string, { files: string[], imports: string[], exports: string[] }>();
+
+  // Extract top-level directory grouping
+  const getModule = (path: string) => path.split('/')[0];
+
+  let entryPoints: string[] = [];
+
+  for (const file of files) {
+    const fullPath = join(basePath, file);
+    
+    // Naively identify entry points
+    if (file.match(/(injected|index|main|App|route|page)\.(ts|tsx)$/i)) {
+      entryPoints.push(file);
+    }
+
     try {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      if (pkg.main) entries.add(pkg.main);
-      if (pkg.bin) Object.values(pkg.bin).forEach((b: any) => entries.add(b));
-    } catch {}
+      const code = readFileSync(fullPath, 'utf8');
+      const tree = parser.parse(code);
+      
+      const modName = getModule(file);
+      if (!modulesMap.has(modName)) {
+        modulesMap.set(modName, { files: [], imports: [], exports: [] });
+      }
+      
+      const mod = modulesMap.get(modName)!;
+      mod.files.push(file);
+
+      // Recursive semantic descent via Tree-sitter
+      const walk = (node: Parser.SyntaxNode) => {
+        if (node.type === 'import_statement') {
+          const sourceNode = node.children.find(c => c.type === 'string');
+          if (sourceNode) mod.imports.push(sourceNode.text.slice(1, -1));
+        }
+        if (node.text.startsWith('export ') || node.type === 'export_statement') {
+          // Capture up to the first 120 chars of the actual function/class signature for the LLM!
+           mod.exports.push(node.text.split(/\n| {/)[0].slice(0, 120));
+        }
+        for (const child of node.children) walk(child);
+      };
+      
+      walk(tree.rootNode);
+
+    } catch (e) {
+      console.warn(`[Tree-Sitter] Skipped or failed to parse AST for: ${file}`);
+    }
   }
 
-  files.forEach(f => {
-    const rel = relative(basePath, f.getFilePath());
-    if (/^(index|main|App|server)\.(ts|js|tsx)$/.test(rel.split('/').pop() || '')) {
-      entries.add(rel);
-    }
-  });
-
-  return Array.from(entries);
-}
-
-function groupModules(basePath: string, files: SourceFile[]): CodeModule[] {
-  const map = new Map<string, CodeModule>();
-
-  files.forEach(f => {
-    const relPath = relative(basePath, f.getFilePath());
-    let folder = 'root';
-    const parts = relPath.split('/');
-    if (parts.length > 2 && parts[0] === 'src') folder = parts[1];
-    else if (parts.length > 1) folder = parts[0];
-
-    if (!map.has(folder)) map.set(folder, { name: folder, files: [], imports: [] });
-    
-    const mod = map.get(folder)!;
-    mod.files.push(relPath);
-
-    f.getImportDeclarations().forEach(imp => {
-      mod.imports.push(imp.getModuleSpecifierValue());
-    });
-  });
-
-  return Array.from(map.values()).map(m => ({
-    ...m,
-    imports: Array.from(new Set(m.imports))
+  const modules = Array.from(modulesMap.entries()).map(([module, data]) => ({
+    module,
+    ...data
   }));
+  
+  return { entryPoints, modules };
 }
