@@ -6,12 +6,6 @@ import { ReactFlow, Background, Controls } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
-type OnboardingStep = {
-  title: string;
-  filePath: string;
-  why: string;
-  focus: string;
-};
 
 type SearchResult = {
   path: string;
