@@ -249,7 +249,7 @@ export default function App() {
                 <section>
                   <h2 className="text-xl font-bold flex items-center gap-2 mb-6 text-slate-900"><ArrowRight className="text-green-500"/> Where to Start</h2>
                   <div className="space-y-4">
-                    {object.onboardingSteps?.map((step: OnboardingStep | undefined, i: number) => (
+                    {object.onboardingSteps?.map((step, i) => (
                       <div key={i} className="flex gap-4 p-4 hover:bg-slate-50 rounded-xl transition-colors border border-transparent hover:border-slate-100">
                         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-700 font-bold flex items-center justify-center shadow-sm">
                           {i + 1}
